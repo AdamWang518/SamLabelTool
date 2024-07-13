@@ -29,17 +29,24 @@ image_files = [f for f in os.listdir(IMAGE_DIR) if f.lower().endswith(('.png', '
 current_image_idx = 0
 
 def get_color(index, total):
-    # Using a combination of tab20, tab20b, and tab20c colormaps
     colormaps = ['tab20', 'tab20b', 'tab20c']
     cmap = plt.get_cmap(colormaps[index % len(colormaps)])
     color = cmap((index // len(colormaps)) / (total // len(colormaps) + 1))
-    return [int(c * 255) for c in color[:3]] + [128]  # Convert to 8-bit color and set alpha to 128 for semi-transparency
+    return [int(c * 255) for c in color[:3]] + [128]
+
+def adjust_color(color_rgb, increase_saturation=2.0, increase_value=1.5):
+    color_hsv = cv2.cvtColor(np.uint8([[color_rgb[:3]]]), cv2.COLOR_RGB2HSV)
+    color_hsv = color_hsv.astype(np.float32)
+    color_hsv[..., 1] = np.clip(color_hsv[..., 1] * increase_saturation, 0, 255)
+    color_hsv[..., 2] = np.clip(color_hsv[..., 2] * increase_value, 0, 255)
+    color_rgb_adjusted = cv2.cvtColor(color_hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+    return [int(c) for c in color_rgb_adjusted[0][0]] + [color_rgb[3]]
 
 def load_image(image_path):
-    print(f"Loading image from: {image_path}")  # Debugging line
+    print(f"Loading image from: {image_path}")
     image_bgr = cv2.imread(image_path)
     if image_bgr is None:
-        print(f"Failed to load image: {image_path}")  # Debugging line
+        print(f"Failed to load image: {image_path}")
         return None, None
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     return image_rgb, image_bgr
@@ -57,7 +64,7 @@ def display_image(image_rgb, image_bgr, overlay, initialize=False):
 
 def generate_initial_masks(image_rgb):
     global initial_mask, overlay, mask_info
-    print("Generating initial masks")  # Debugging line
+    print("Generating initial masks")
     sam_result = mask_generator.generate(image_rgb)
     initial_mask = np.zeros((image_rgb.shape[0], image_rgb.shape[1], 4), dtype=np.uint8)
 
@@ -65,26 +72,28 @@ def generate_initial_masks(image_rgb):
     for i, result in enumerate(sam_result):
         mask = result['segmentation']
         color = get_color(i, len(sam_result))
+        color = adjust_color(color)
         colored_mask = np.zeros_like(image_rgb, dtype=np.uint8)
         for j in range(3):
             colored_mask[mask > 0.5, j] = color[j]
-        alpha_channel = (mask > 0.5).astype(np.uint8) * color[3]  # Semi-transparent
+        alpha_channel = (mask > 0.5).astype(np.uint8) * color[3]
         colored_mask = np.dstack((colored_mask, alpha_channel))
         initial_mask = np.maximum(initial_mask, colored_mask)
         mask_info.append(mask)
 
     overlay = cv2.addWeighted(image_rgb, 0.7, initial_mask[:, :, :3], 0.3, 0)
-    print("Initial masks generated")  # Debugging line
+    print("Initial masks generated")
 
 def load_existing_mask(mask_path, image_rgb):
     global initial_mask, overlay, mask_info
-    print(f"Loading mask from: {mask_path}")  # Debugging line
+    print(f"Loading mask from: {mask_path}")
     with np.load(mask_path) as data:
         mask_info = [data[key] for key in data]
     initial_mask = np.zeros((image_rgb.shape[0], image_rgb.shape[1], 4), dtype=np.uint8)
     
     for i, mask in enumerate(mask_info):
         color = get_color(i, len(mask_info))
+        color = adjust_color(color)
         colored_mask = np.zeros_like(image_rgb, dtype=np.uint8)
         for j in range(3):
             colored_mask[mask > 0.5, j] = color[j]
@@ -93,7 +102,7 @@ def load_existing_mask(mask_path, image_rgb):
         initial_mask = np.maximum(initial_mask, colored_mask)
     
     overlay = cv2.addWeighted(image_rgb, 0.7, initial_mask[:, :, :3], 0.3, 0)
-    print("Overlay created")  # Debugging line
+    print("Overlay created")
 
 def update_overlay():
     global overlay, initial_mask, image_rgb
@@ -146,21 +155,20 @@ def load_previous_image(event):
 def refine_mask(event):
     global input_points, input_labels, initial_mask, overlay, mask_info, image_rgb
     if input_points:
-        print("Refining mask")  # Debugging line
+        print("Refining mask")
         mask_predictor.set_image(image_rgb)
         prediction = mask_predictor.predict(point_coords=np.array(input_points), point_labels=np.array(input_labels))
 
-        # Check the structure of the returned prediction
         if len(prediction) == 3:
             masks, scores, logits = prediction
         else:
             masks, scores = prediction
 
-        # Optionally annotate and save the final image
-        final_mask = masks[0]  # Choose the first mask, adjust if needed
+        final_mask = masks[0]
 
-        # Assign a color to the manual mask and combine it with the initial mask
-        manual_mask_color = get_color(len(mask_info), len(mask_info) + 1)  # 使用新的颜色
+        # Generate a new color for the refined mask
+        manual_mask_color = get_color(len(mask_info), len(mask_info) + 1)
+        manual_mask_color = adjust_color(manual_mask_color)
         colored_manual_mask = np.zeros_like(image_rgb, dtype=np.uint8)
         for j in range(3):
             colored_manual_mask[final_mask > 0.5, j] = manual_mask_color[j]
@@ -168,27 +176,24 @@ def refine_mask(event):
         colored_manual_mask = np.dstack((colored_manual_mask, alpha_channel))
         initial_mask = np.maximum(initial_mask, colored_manual_mask)
 
-        # Update mask_info with the new mask
         mask_info.append(final_mask)
 
-        # Update the overlay
         update_overlay()
 
-        # Clear input points for next refinement
         input_points = []
         input_labels = []
-        print("Mask refined")  # Debugging line
+        print("Mask refined")
 
 def reset(event):
     global input_points, input_labels, blue_points, blue_labels, initial_mask, overlay, mask_info
-    print("Resetting masks")  # Debugging line
+    print("Resetting masks")
     input_points = []
     input_labels = []
     blue_points = []
     blue_labels = []
     generate_initial_masks(image_rgb)
     display_image(image_rgb, image_bgr, overlay)
-    print("Masks reset")  # Debugging line
+    print("Masks reset")
 
 def cancel_mask(event):
     global input_points, input_labels, blue_points, blue_labels, initial_mask, overlay, mask_info
@@ -196,27 +201,23 @@ def cancel_mask(event):
         bx, by = blue_points[0]
         for i, mask in enumerate(mask_info):
             if mask[by, bx]:
-                print(f"Cancelling mask at {bx}, {by}")  # Debugging line
-                # Remove the mask from mask_info
+                print(f"Cancelling mask at {bx}, {by}")
                 mask_info.pop(i)
-                # Clear the mask region in initial_mask
                 initial_mask[mask > 0.5] = 0
                 break
 
-        # Update the overlay
         update_overlay()
         blue_points = []
         blue_labels = []
-        print("Mask cancelled")  # Debugging line
+        print("Mask cancelled")
 
 def save(event):
     global overlay, initial_mask, mask_info
     save_name = os.path.splitext(image_files[current_image_idx])[0]
     np.savez(os.path.join(SAVE_DIR, f"{save_name}_mask.npz"), *mask_info)
     cv2.imwrite(os.path.join(SAVE_DIR, f"{save_name}_segmented.png"), cv2.cvtColor(overlay, cv2.COLOR_RGBA2BGRA))
-    print(f"Saved mask to: {os.path.join(SAVE_DIR, f'{save_name}_mask.npz')}")  # Debugging line
+    print(f"Saved mask to: {os.path.join(SAVE_DIR, f'{save_name}_mask.npz')}")
 
-# Load and display the first image
 image_rgb, image_bgr = load_image(os.path.join(IMAGE_DIR, image_files[current_image_idx]))
 if image_rgb is not None and image_bgr is not None:
     mask_path = os.path.join(SAVE_DIR, f"{os.path.splitext(image_files[current_image_idx])[0]}_mask.npz")
@@ -225,33 +226,30 @@ if image_rgb is not None and image_bgr is not None:
     else:
         generate_initial_masks(image_rgb)
 
-# Create plot
 fig, ax = plt.subplots(1, 2, figsize=(15, 5))
 if image_rgb is not None and image_bgr is not None:
     display_image(image_rgb, image_bgr, overlay, initialize=True)
 
-# Collect points
 input_points = []
 input_labels = []
 blue_points = []
 blue_labels = []
 
 def onclick(event):
-    if event.inaxes == ax[1]:  # Only register clicks on the segmented image
+    if event.inaxes == ax[1]:
         ix, iy = int(event.xdata), int(event.ydata)
-        if event.button == 1:  # Left click
+        if event.button == 1:
             input_points.append([ix, iy])
-            input_labels.append(1)  # Assuming all clicks are foreground points
+            input_labels.append(1)
             ax[1].plot(ix, iy, 'ro')
-        elif event.button == 3:  # Right click
+        elif event.button == 3:
             blue_points.append([ix, iy])
-            blue_labels.append(1)  # Assuming all clicks are foreground points
+            blue_labels.append(1)
             ax[1].plot(ix, iy, 'bo')
         fig.canvas.draw()
 
 fig.canvas.mpl_connect('button_press_event', onclick)
 
-# Add buttons to finish point collection and refine the mask, to reset to the initial state, and to cancel a mask
 ax_button_refine = plt.axes([0.51, 0.01, 0.1, 0.075])
 button_refine = Button(ax_button_refine, 'Refine Mask')
 
