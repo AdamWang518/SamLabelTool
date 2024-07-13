@@ -13,8 +13,18 @@ MODEL_TYPE = "vit_h"
 
 # Load the model
 sam = sam_model_registry[MODEL_TYPE](checkpoint=CHECKPOINT_PATH).to(device=DEVICE)
-mask_generator = SamAutomaticMaskGenerator(sam)
-
+# mask_generator = SamAutomaticMaskGenerator(sam)
+# mask_generator = SamAutomaticMaskGenerator(
+#     sam, 
+#     points_per_side=32,           # 生成点的数量，提高遮罩质量
+#     pred_iou_thresh=0.90,         # 设置预测的 IoU 阈值，值越高筛选的遮罩越严格
+#     stability_score_thresh=0.90,  # 设置稳定性得分阈值，值越高筛选的遮罩越严格
+#     min_mask_region_area=100      # 设置最小遮罩区域，过滤掉小区域
+# )
+mask_generator = SamAutomaticMaskGenerator(
+    sam,
+    min_mask_region_area=100      # 设置最小遮罩区域，过滤掉小区域
+)
 # Set image directory and save directory
 IMAGE_DIR = "D:\\SAMTEST"  # Replace with your image directory
 SAVE_DIR = "D:\\SAMTEST\\output"  # Replace with your save directory
