@@ -28,9 +28,10 @@ def load_and_display_masks(mask_file):
     plt.title(f'Masks of {os.path.basename(mask_file)}')
     plt.axis('off')
     plt.show()
+    plt.close()
 
 # Load and display masks for each .npz file
 for mask_file in os.listdir(SAVE_DIR):
     if mask_file.lower().endswith('_mask.npz'):
         load_and_display_masks(os.path.join(SAVE_DIR, mask_file))
-        input("Press any key to continue to the next file...")
+        input("Press Enter to continue to the next file...")
