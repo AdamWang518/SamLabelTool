@@ -44,8 +44,6 @@ def load_and_display_masks(image_file, mask_file):
         colored_mask = np.zeros_like(image_rgb, dtype=np.uint8)
         for j in range(3):
             colored_mask[mask > 0.5, j] = color[j]
-        alpha_channel = (mask > 0.5).astype(np.uint8) * color[3]
-        colored_mask = np.dstack((colored_mask, alpha_channel))
         overlay = np.maximum(overlay, colored_mask)
     
     plt.figure(figsize=(10, 5))
@@ -55,7 +53,7 @@ def load_and_display_masks(image_file, mask_file):
     plt.axis('off')
 
     plt.subplot(1, 2, 2)
-    plt.imshow(cv2.addWeighted(image_rgb, 0.7, overlay[:, :, :3], 0.3, 0))
+    plt.imshow(cv2.addWeighted(image_rgb, 0.7, overlay, 0.3, 0))
     plt.title('Image with Masks')
     plt.axis('off')
     plt.show()
