@@ -29,10 +29,11 @@ image_files = [f for f in os.listdir(IMAGE_DIR) if f.lower().endswith(('.png', '
 current_image_idx = 0
 
 def get_color(index, total):
-    unique_colors = plt.get_cmap('hsv')
-    color = unique_colors(index / total)
+    # Using a combination of tab20, tab20b, and tab20c colormaps
+    colormaps = ['tab20', 'tab20b', 'tab20c']
+    cmap = plt.get_cmap(colormaps[index % len(colormaps)])
+    color = cmap((index // len(colormaps)) / (total // len(colormaps) + 1))
     return [int(c * 255) for c in color[:3]] + [128]  # Convert to 8-bit color and set alpha to 128 for semi-transparency
-
 
 def load_image(image_path):
     print(f"Loading image from: {image_path}")  # Debugging line
@@ -171,15 +172,12 @@ def refine_mask(event):
         mask_info.append(final_mask)
 
         # Update the overlay
-        overlay = cv2.addWeighted(image_rgb, 0.7, initial_mask[:, :, :3], 0.3, 0)
-        ax[1].images[0].set_data(overlay)
-        fig.canvas.draw()
+        update_overlay()
 
         # Clear input points for next refinement
         input_points = []
         input_labels = []
         print("Mask refined")  # Debugging line
-
 
 def reset(event):
     global input_points, input_labels, blue_points, blue_labels, initial_mask, overlay, mask_info
